@@ -8,4 +8,5 @@ $logoutUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/logout?post_l
 
 // Redirige al usuario a la URL de cierre de sesión de Microsoft
 header("Location: $logoutUrl");
+
 exit();

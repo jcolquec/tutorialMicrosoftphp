@@ -52,7 +52,6 @@ try {
 }catch (Exception $e) {
     echo 'Error: ' . $e->getMessage();
 }
-
 /**
  * Obtiene los valores de la hoja de cálculo.
  */

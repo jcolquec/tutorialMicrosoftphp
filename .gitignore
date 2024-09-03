@@ -1,0 +1,7 @@
+/vendor
+.env
+DeviceCodeTokenProvider.php
+main.php
+GraphHelper.php
+composer.lock
+composer.json

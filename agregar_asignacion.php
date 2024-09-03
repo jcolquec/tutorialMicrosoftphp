@@ -56,7 +56,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         echo 'Error obteniendo el access token: ' . $e->getMessage();
     }
 }
-
 /**
  * Obtiene el rango usado de la hoja de cálculo.
  */

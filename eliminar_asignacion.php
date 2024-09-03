@@ -83,4 +83,5 @@ function deleteRow($client, $fileId, $worksheetId, $rowIndex, $accessToken) {
         ],
     ]);
 }
+
 ?>

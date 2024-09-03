@@ -151,7 +151,6 @@ function getUserEmail(Client $client, $accessToken) {
 
     return json_decode($response->getBody(), true);
 }
-
 /**
  * Obtiene los valores de la hoja de cálculo.
  */

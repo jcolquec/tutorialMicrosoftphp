@@ -93,7 +93,6 @@ function refreshAccessToken(Client $client, $refresh_token, $tenant_id, $client_
 
     return json_decode($response->getBody(), true);
 }
-
 /**
  * Obtiene el correo del usuario.
  */

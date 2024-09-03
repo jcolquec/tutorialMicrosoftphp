@@ -23,4 +23,5 @@ $auth_url = "https://login.microsoftonline.com/$tenant_id/oauth2/v2.0/authorize?
 // Redirige al usuario a la URL de autorización
 header('Location: ' . $auth_url);
 exit;
+
 ?>

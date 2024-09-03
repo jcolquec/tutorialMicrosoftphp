@@ -39,7 +39,6 @@ try{
     $newRow = $lastRow + 1;
     $range = "A$newRow:G$newRow"; // Rango de la nueva fila de la columna A a la G
 
-
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         $idControl = $_POST['dato'];
