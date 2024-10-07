@@ -1,18 +1,12 @@
 <?php
+
 session_start();
-require 'vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+require 'funciones.php'; // Incluir el archivo de funciones
+require 'config.php'; // Incluir el archivo de configuración
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-use Dotenv\Dotenv;
-
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-$dotenv->required(['DRIVE_ID', 'ITEM_ID','WORKSHEET_ID_REGISTROSCTRL']); 
-
-$driveId = $_ENV['DRIVE_ID'];
-$itemId = $_ENV['ITEM_ID'];
-$worksheetIdRegistros = $_ENV['WORKSHEET_ID_REGISTROSCTRL'];
 
 // Verificar si la sesión de Microsoft está activa
 if (!isset($_SESSION['accessToken'])) {
@@ -21,18 +15,21 @@ if (!isset($_SESSION['accessToken'])) {
     exit();
 }
 
+// Variable de control para errores
+$error_occurred = false;
+
 try{
     // Solicita el access token usando el authorization code
     $client = new Client();
 
     // Obtener los datos de la hoja de registros
-    $dataRegistros = getWorksheetValues($client, $driveId, $itemId, $worksheetIdRegistros, $_SESSION['accessToken']);
+    $dataRegistros = getWorksheetValues($client, $itemId, $worksheetIdRegistros, $_SESSION['accessToken'], $driveId);
 
     // Filtrar los datos de la hoja de registros en base al correo
     $filteredData = [];
     $filteredFormatData = ['format' => ['font' => []]];
 
-    foreach ($dataRegistros['text'] as $rowIndex => $row) {
+    foreach ($dataRegistros as $rowIndex => $row) {
         
         if ($rowIndex == 0) {
             continue;
@@ -42,28 +39,20 @@ try{
             $filteredFormatData['format']['font'][] = isset($formatData['format']['font'][$rowIndex]) ? $formatData['format']['font'][$rowIndex] : [];
         }
     }
+    // Función de comparación para ordenar por fecha (elemento 6)
+    usort($filteredData, function($a, $b) {
+        $dateA = DateTime::createFromFormat('d/m/Y', $a[6]);
+        $dateB = DateTime::createFromFormat('d/m/Y', $b[6]);
+        return strcmp($dateA, $dateB);
+    });
 
 }catch (RequestException $e) {
     echo 'Error en la solicitud: ' . $e->getMessage();
 }catch(Exception $e){
-    echo $e->getMessage();
+    echo 'Error: ' . $e->getMessage();
 }
-/**
- * Obtiene los valores de la hoja de cálculo.
- */
-function getWorksheetValues(Client $client, $driveId, $itemId, $worksheetId, $accessToken) {
-    try {
-        $select= 'select';
-        $response = $client->request('GET', "https://graph.microsoft.com/v1.0/drives/$driveId/items/$itemId/workbook/worksheets/$worksheetId/usedRange?$select=text", [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $accessToken,
-            ],
-        ]);
-        return json_decode($response->getBody(), true);
-    } catch (RequestException $e) {
-        throw new Exception('Error en la solicitud: ' . $e->getMessage());
-    }
-}
+// Solo cargar el HTML si no ocurrió un error
+if (!$error_occurred):
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -74,71 +63,248 @@ function getWorksheetValues(Client $client, $driveId, $itemId, $worksheetId, $ac
     <!-- Incluir Bootstrap CSS -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <!-- Incluir DataTables CSS -->
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
     <!-- Incluir DataTables Buttons CSS -->
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .wrapper {
+            display: flex;
+            flex: 1;
+        }
+
+        .sidebar {
+            height: 100vh;
+            width: 250px;
+            background-color: #343a40;
+            padding-top: 20px;
+            position: fixed;
+            top: 0;
+            left: -250px;
+            transition: left 0.3s ease;
+        }
+
+        .sidebar form {
+            width: 100%;
+            padding: 10px;
+        }
+
+        .sidebar button {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .sidebar.open {
+            left: 0; /* Mostrar el menú cuando está abierto */
+        }
+
+        .menu-toggle {
+            background-color: #343a40;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            z-index: 1100;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+        }
+
+        .content {
+            background-color: #1e1e1e;
+            margin-left: 0px;
+            padding: 20px;
+            transition: margin-left 0.3s ease;
+            overflow-x: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .content.shifted {
+            margin-left: 250px; /* Ajustar el contenido cuando el menú está abierto */
+        }
+
+        .table {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            width: 100%;
+            flex: 1;
+        }
+
+        .table thead th {
+            background-color: #333333;
+            color: #ffffff;
+        }
+
+        .table tbody tr:nth-child(odd) {
+            background-color: #2a2a2a;
+        }
+
+        .table tbody tr:nth-child(even) {
+            background-color: #1e1e1e;
+        }
+
+        .table tbody tr:hover {
+            background-color: #444444;
+        }
+
+        .table a {
+            color: #1e90ff;
+        }
+
+        .table a:hover {
+            color: #ff4500;
+        }
+
+        label, select, input {
+            color: #ffffff;
+        }
+
+        .form-control, .form-control:focus {
+            background-color: #333;
+            color: #fff;
+        }
+        
+        .dataTables_wrapper .dataTables_info{
+            color: #ffffff !important;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                left: -100%;
+            }
+
+            .sidebar.active {
+                transform: translateX(0);
+            }
+
+            .content {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .content.active {
+                margin-left: 250px;
+                width: calc(100% - 250px);
+            }
+
+            .content.shifted {
+                margin-left: 100%;
+            }
+
+            .menu-toggle {
+                display: block;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 1000;
+            }
+        }
+
+        /* Estilos personalizados para los botones de DataTables */
+        .dt-button {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            border: 1px solid #000000 !important;
+        }
+
+        .dt-button:hover {
+            background-color: #e0e0e0 !important;
+            color: #000000 !important;
+        }
+    </style>
 </head>
 <body>
-    <div class="container mt-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Bitácora de Controles</h1>
-            <div>
-                <form action="callback.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-secondary">Lista de Controles</button>
-                </form>
-                <form action="gestionar_controles.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-secondary">Gestionar controles</button>
-                </form>
-                <form action="bitacoraControles.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-info">Ver bitácora</button>
-                </form>
-                <form action="logout.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
-                </form>
-            </div>
+    <button class="btn btn-secondary menu-toggle" onclick="toggleMenu()">☰</button>
+    <div class="sidebar" id="sidebar">
+        <div class="menu-title">
+            <h2 class="text-center">Menú</h2>
         </div>
-        <!-- Campos de entrada para los filtros -->
-        <div class="row mb-3">
-            <div class="col-md-4">
-                <label for="filterObjeto">Filtrar por Objeto a controlar:</label>
-                <select id="filterObjeto" class="form-control">
-                    <option value="">Todos</option>
-                    <?php foreach ($filteredData as $objeto): ?>
-                        <option value="<?php echo htmlspecialchars($objeto[2]); ?>"><?php echo htmlspecialchars($objeto[2]); ?></option>
-                    <?php endforeach; ?>
-                </select>
+        <form action="callback.php" method="post">
+            <button type="submit" class="btn btn-secondary">Lista de Controles</button>
+        </form>
+        <form action="gestionar_controles.php" method="post">
+            <button type="submit" class="btn btn-secondary">Gestionar controles</button>
+        </form>
+        <form action="bitacoraControles.php" method="post">
+            <button type="submit" class="btn btn-info">Ver bitácora</button>
+        </form>
+        <form action="logout.php" method="post">
+            <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
+        </form>
+    </div>
+    <div class="content" id="content">
+        <div class="container mt-5">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Bitácora de Controles</h1>
             </div>
-            <div class="col-md-4">
-                <label for="filterFechaInicio">Filtrar por Fecha (Inicio):</label>
-                <input type="date" id="filterFechaInicio" class="form-control">
-            </div>
-            <div class="col-md-4">
-                <label for="filterFechaFin">Filtrar por Fecha (Fin):</label>
-                <input type="date" id="filterFechaFin" class="form-control">
-            </div>
-        </div>
-        <table id="bitacoraTable" class="table table-striped table-bordered">
-            <thead>
-                <tr>
-                    <th>Correo Usuario</th>
-                    <th>ID Control</th>
-                    <th>Objeto a controlar</th>
-                    <th>Respuesta</th>
-                    <th>Observaciones</th>
-                    <th>Nombre y URI del archivo</th>
-                    <th>Fecha y hora</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($filteredData as $row): ?>
-                    <tr>
-                        <?php foreach ($row as $cell): ?>
-                            <td><?php echo htmlspecialchars($cell); ?></td>
+            <!-- Campos de entrada para los filtros -->
+            <div class="row mb-3">
+                <div class="col-md-2">
+                    <label for="filterObjeto">Objeto controlado:</label>
+                    <select id="filterObjeto" class="form-control">
+                        <option value="">Todos</option>
+                        <?php
+                        $uniqueValues = []; // Array para almacenar valores únicos
+                        foreach ($filteredData as $fila):
+                            // Verificar si el valor ya está en el array de valores únicos
+                            if (in_array($fila[2], $uniqueValues)) {
+                                // Si el valor ya está en el array, continuar con la iteración
+                                continue;
+                            }
+                            // Añadir el valor al array de valores únicos
+                            $uniqueValues[] = $fila[2];
+                            ?>
+                            <option value="<?php echo htmlspecialchars($fila[2]); ?>"><?php echo htmlspecialchars($fila[2]); ?></option>
                         <?php endforeach; ?>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filterFechaInicio">Fecha inicio:</label>
+                    <input type="date" id="filterFechaInicio" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label for="filterFechaFin">Fecha fin:</label>
+                    <input type="date" id="filterFechaFin" class="form-control">
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table id="bitacoraTable" class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th>Correo Usuario</th>
+                            <th>ID Control</th>
+                            <th>Objeto controlado</th>
+                            <th>Respuesta</th>
+                            <th>Observaciones</th>
+                            <th>Nombre y URI del archivo</th>
+                            <th>Fecha y hora</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($filteredData as $row): ?>
+                            <tr>
+                                <?php foreach ($row as $cell): ?>
+                                    <td><?php echo htmlspecialchars($cell); ?></td>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- Incluir jQuery -->
@@ -152,6 +318,10 @@ function getWorksheetValues(Client $client, $driveId, $itemId, $worksheetId, $ac
     <script src="https://cdn.datatables.net/buttons/1.7.1/js/buttons.print.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/pdfmake.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.36/vfs_fonts.js"></script>
+    <!-- Incluir Moment.js para el manejo de fechas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <!-- Incluir DataTables DateTime plugin -->
+    <script src="https://cdn.datatables.net/datetime/1.1.0/js/dataTables.dateTime.min.js"></script>
 
     <!-- Incluir Bootstrap JS y dependencias -->
     <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
@@ -159,6 +329,17 @@ function getWorksheetValues(Client $client, $driveId, $itemId, $worksheetId, $ac
     <script>
         $(document).ready(function() {
             var table = $('#bitacoraTable').DataTable({
+                columnDefs: [
+                    {
+                        targets: 6, // Índice de la columna "Fecha y hora"
+                        render: function(data, type, row) {
+                            if (type === 'sort' || type === 'type') {
+                                return moment(data, 'DD/MM/YYYY HH:mm:ss').format('YYYYMMDDHHmmss');
+                            }
+                            return data;
+                        }
+                    }
+                ],
                 "language": {
                     "lengthMenu": "Mostrar _MENU_ registros por página",
                     "zeroRecords": "No se encontraron registros",
@@ -243,6 +424,16 @@ function getWorksheetValues(Client $client, $driveId, $itemId, $worksheetId, $ac
                 table.draw();
             });
         });
+
+        function toggleMenu() {
+            var sidebar = document.getElementById('sidebar');
+            var content = document.getElementById('content');
+            sidebar.classList.toggle('open');
+            content.classList.toggle('shifted');
+        }
     </script>
 </body>
 </html>
+<?php
+endif;
+?>

@@ -1,19 +1,12 @@
 <?php
-require 'vendor/autoload.php'; // Cargar Guzzle HTTP client
+
 session_start();
+require_once __DIR__ . '/../vendor/autoload.php';
+require 'funciones.php'; // Incluir el archivo de funciones
+require 'config.php'; // Incluir el archivo de configuración
+
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\RequestException;
-use Dotenv\Dotenv;
-
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-$dotenv->required(['DRIVE_ID', 'ITEM_ID','WORKSHEET_ID_CTRL', 'WORKSHEET_ID_CTRLXCORREO']); 
-
-$driveId = $_ENV['DRIVE_ID'];
-$itemId = $_ENV['ITEM_ID'];
-$worksheetIdControles = $_ENV['WORKSHEET_ID_CTRL'];
-$worksheetIdRegistroCtrl = $_ENV['WORKSHEET_ID_REGISTROSCTRL'];
+use GuzzleHttp\Exception\RequestException; 
 
 try{
     // Verificar si la sesión de Microsoft está activa
@@ -22,8 +15,9 @@ try{
         header('Location: login.php');
         exit();
     }
-    // Solicita el access token usando el authorization code
+
     $client = new Client();
+
     // Establecer la zona horaria a "America/Santiago"
     date_default_timezone_set('America/Santiago');
 
@@ -31,9 +25,9 @@ try{
     $correo = getUserEmail($client, $_SESSION['accessToken']);
 
     // Obtener el rango usado de la hoja de cálculo
-    $usedRange = getUsedRange($client, $itemId, $worksheetIdRegistroCtrl, $_SESSION['accessToken']);
+    $usedRange = getWorksheetValues($client, $itemId, $worksheetIdRegistros, $_SESSION['accessToken'], $driveId);
 
-    $lastRow = count($usedRange['values']); // Determinar la última fila con datos
+    $lastRow = count($usedRange); // Determinar la última fila con datos
 
     // Calcular la dirección de la celda en la nueva fila
     $newRow = $lastRow + 1;
@@ -60,50 +54,14 @@ try{
                 [$correo['mail'], $idControl, $objeto, $respuesta, $observaciones, $nombresUrisConcatenados, $fechaHora]
             ]
         ];
-    
-        $response = $client->request('PATCH', "https://graph.microsoft.com/v1.0/me/drive/items/$fileId/workbook/worksheets/$worksheetId/range(address='$range')", [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $_SESSION['accessToken'],
-                'Content-Type' => 'application/json',
-            ],
-            'json' => $data,
-        ]);
+
+        // Agregar la nueva fila
+        addRow($client, $itemId, $worksheetIdRegistros, $range, $data, $_SESSION['accessToken'], $driveId);
+
         header('Location: form_control.php?data=' . $idControl.'&success=1');
-    exit();
+        exit();
     }
 }catch(Exception $e){
     echo 'Error: ' . $e->getMessage();
-}
-
-/**
- * Obtiene el correo del usuario.
- */
-function getUserEmail(Client $client, $accessToken) {
-    try {
-        $response = $client->request('GET', 'https://graph.microsoft.com/v1.0/me?$select=mail', [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $accessToken,
-                'Accept' => 'application/json',
-            ],
-        ]);
-        return json_decode($response->getBody(), true);
-    } catch (RequestException $e) {
-        throw new Exception('Error en la solicitud: ' . $e->getMessage());
-    }
-}
-/**
- * Obtiene el rango usado de la hoja de cálculo.
- */
-function getUsedRange(Client $client, $fileId, $worksheetId, $accessToken) {
-    try {
-        $response = $client->request('GET', "https://graph.microsoft.com/v1.0/me/drive/items/$fileId/workbook/worksheets/$worksheetId/usedRange", [
-            'headers' => [
-                'Authorization' => 'Bearer ' . $accessToken,
-            ],
-        ]);
-        return json_decode($response->getBody(), true);
-    } catch (RequestException $e) {
-        throw new Exception('Error en la solicitud: ' . $e->getMessage());
-    }
 }
 ?>

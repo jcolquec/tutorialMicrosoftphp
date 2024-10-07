@@ -1,25 +1,15 @@
 <?php
-require 'vendor/autoload.php';
+
 session_start();
+require_once __DIR__ . '/../vendor/autoload.php';
+require 'funciones.php'; // Incluir el archivo de funciones
+require 'config.php'; // Incluir el archivo de configuración
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-use Dotenv\Dotenv;
 
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-$dotenv->required(['CLIENT_ID', 'TENANT_ID', 'CLIENT_SECRET', 'REDIRECT_URI', 'DRIVE_ID', 'ITEM_ID', 'WORKSHEET_ID_CTRL', 'WORKSHEET_ID_CTRLXCORREO']);
-
-// Configuración básica
-$client_id = $_ENV['CLIENT_ID'];
-$client_secret = $_ENV['CLIENT_SECRET'];
-$tenant_id = $_ENV['TENANT_ID'];
-$redirect_uri = $_ENV['REDIRECT_URI']; // Debe coincidir con la URI registrada
-$driveId = $_ENV['DRIVE_ID'];
-$itemId = $_ENV['ITEM_ID'];
-$worksheetIdControles = $_ENV['WORKSHEET_ID_CTRL'];
-$worksheetIdCtrlxCorreo = $_ENV['WORKSHEET_ID_CTRLXCORREO'];
+// Variable de control para errores
+$error_occurred = false;
 
 // Verifica que el código de autorización esté presente
 if (isset($_GET['code'])) {
@@ -52,23 +42,30 @@ if (isset($_GET['code'])) {
 
             // Obtener el correo del usuario
             $correo = getUserEmail($client, $_SESSION['accessToken']);
-
+            
+            $correoValido = validarUsuario($client, $itemId, $worksheetUsuarios, $_SESSION['accessToken'], $correo['mail'], $driveId);
+            if (!$correoValido) {
+                echo 'No tienes permisos para acceder a esta página.';
+                exit();
+            }
+            
+            // Obtener el datos del archivo de Excel
             $dataControles = getWorksheetValues($client, $itemId, $worksheetIdControles, $_SESSION['accessToken'], $driveId);
             
             // Leer el rango de la hoja de códigos y correos
             $dataCodigos = getWorksheetValues($client, $itemId, $worksheetIdCtrlxCorreo, $_SESSION['accessToken'], $driveId);
-
+            
             // Filtrar los datos de la hoja de controles en base a los códigos
             $filteredData = [];
             $filteredFormatData = ['format' => ['font' => []]];
 
-            foreach ($dataControles['values'] as $rowIndex => $row) {
+            foreach ($dataControles as $rowIndex => $row) {
                 if ($rowIndex == 0) {
                     // Agregar encabezados
                     $filteredData[] = [$row[0], $row[2], $row[4]];
                 } else {
                     $codigo = $row[0]; // Suponiendo que el código está en la primera columna
-                    foreach ($dataCodigos['values'] as $codigoRow) {
+                    foreach ($dataCodigos as $codigoRow) {
                         if ($codigo == $codigoRow[1] && $correo['mail'] == $codigoRow[0]) {
                             $filteredData[] = [$row[0], substr($row[2], 8), $row[4]];
                             $filteredFormatData['format']['font'][] = isset($formatData['format']['font'][$rowIndex]) ? $formatData['format']['font'][$rowIndex] : [];
@@ -97,73 +94,13 @@ if (isset($_GET['code'])) {
         } catch (RequestException $e) {
             echo 'Error en la solicitud: ' . $e->getMessage();
         } catch (Exception $e) {
-            echo 'Error refrescando el access token: ' . $e->getMessage();
+            echo 'Error: ' . $e->getMessage();
         }
     }
 }
 
-/**
- * Obtiene el access token usando el authorization code.
- */
-function getAccessToken(Client $client, $authorization_code, $tenant_id, $client_id, $client_secret, $redirect_uri) {
-    $response = $client->request('POST', "https://login.microsoftonline.com/$tenant_id/oauth2/v2.0/token", [
-        'form_params' => [
-            'client_id' => $client_id,
-            'client_secret' => $client_secret,
-            'grant_type' => 'authorization_code',
-            'code' => $authorization_code,
-            'redirect_uri' => $redirect_uri,
-            'scope' => 'https://graph.microsoft.com/.default'
-        ],
-    ]);
-
-    return json_decode($response->getBody(), true);
-}
-
-/**
- * Refresca el access token usando el refresh token.
- */
-function refreshAccessToken(Client $client, $refresh_token, $tenant_id, $client_id, $client_secret, $redirect_uri) {
-    $response = $client->request('POST', "https://login.microsoftonline.com/$tenant_id/oauth2/v2.0/token", [
-        'form_params' => [
-            'client_id' => $client_id,
-            'client_secret' => $client_secret,
-            'grant_type' => 'refresh_token',
-            'refresh_token' => $refresh_token,
-            'redirect_uri' => $redirect_uri,
-            'scope' => 'https://graph.microsoft.com/.default'
-        ],
-    ]);
-
-    return json_decode($response->getBody(), true);
-}
-
-/**
- * Obtiene el correo del usuario.
- */
-function getUserEmail(Client $client, $accessToken) {
-    $response = $client->request('GET', 'https://graph.microsoft.com/v1.0/me?$select=mail', [
-        'headers' => [
-            'Authorization' => 'Bearer ' . $accessToken,
-            'Accept' => 'application/json',
-        ],
-    ]);
-
-    return json_decode($response->getBody(), true);
-}
-/**
- * Obtiene los valores de la hoja de cálculo.
- */
-function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken, $driveId) {
-    $select = 'select';
-    $response = $client->request('GET', "https://graph.microsoft.com/v1.0/drives/$driveId/items/$itemId/workbook/worksheets/$worksheetId/usedRange?$select=text", [
-        'headers' => [
-            'Authorization' => 'Bearer ' . $accessToken,
-        ],
-    ]);
-
-    return json_decode($response->getBody(), true);
-}
+// Solo cargar el HTML si no ocurrió un error
+if (!$error_occurred):
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -175,52 +112,204 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
     <!-- Incluir DataTables CSS -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/jquery.dataTables.css">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
 
+        body {
+            background-color: #1e1e1e;
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .wrapper {
+            display: flex;
+            flex: 1;
+        }
+
+        .sidebar {
+            height: 100vh;
+            width: 250px;
+            background-color: #343a40;
+            padding-top: 20px;
+            position: fixed;
+            top: 0;
+            left: -250px;
+            transition: left 0.3s ease;
+        }
+        .sidebar.open {
+            left: 0; /* Mostrar el menú cuando está abierto */
+        }
+
+        .sidebar form {
+            width: 100%;
+            padding: 10px;
+        }
+
+        .sidebar button {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .menu-toggle {
+            background-color: #343a40;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            z-index: 1100;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+        }
+
+        .content {
+            background-color: #1e1e1e;
+            margin-left: 0px;
+            padding: 20px;
+            transition: margin-left 0.3s ease;
+            overflow-x: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        .content.shifted {
+            margin-left: 250px; /* Ajustar el contenido cuando el menú está abierto */
+        }
+
+        .table {
+            background-color: #1e1e1e;
+            color: #ffffff;
+            width: 100%;
+            flex: 1;
+        }
+
+        .table thead th {
+            background-color: #333333;
+            color: #ffffff;
+        }
+
+        .table tbody tr:nth-child(odd) {
+            background-color: #2a2a2a;
+        }
+
+        .table tbody tr:nth-child(even) {
+            background-color: #1e1e1e;
+        }
+
+        .table tbody tr:hover {
+            background-color: #444444;
+        }
+
+        .table a {
+            color: #1e90ff;
+        }
+
+        .table a:hover {
+            color: #ff4500;
+        }
+
+        label, select, input {
+            color: #ffffff;
+        }
+        .dataTables_wrapper .dataTables_info{
+            color: #ffffff !important;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                left: -100%;
+            }
+
+            .content {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .content.shifted {
+                margin-left: 100%;
+            }
+
+            .menu-toggle {
+                display: block;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 1000;
+            }
+        }
+
+        /* Estilos personalizados para los botones de DataTables */
+        .dt-button {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            border: 1px solid #000000 !important;
+        }
+
+        .dt-button:hover {
+            background-color: #e0e0e0 !important;
+            color: #000000 !important;
+        }
+    </style>
 </head>
 <body>
-    <div class="container mt-5">
-        
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1>Lista de Controles</h1>
-            <div>
-                <form action="callback.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-secondary">Lista de Controles</button>
-                </form>
-                <form action="gestionar_controles.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-secondary">Gestionar controles</button>
-                </form>
-                <form action="bitacoraControles.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-info">Ver bitácora</button>
-                </form>
-                <form action="logout.php" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
-                </form>
-            </div>
+    <button class="btn btn-secondary menu-toggle" onclick="toggleMenu()">☰</button>
+    <div class="sidebar" id="sidebar">
+        <div class="menu-title">
+            <h2 class="text-center">Menú</h2>
         </div>
-        <table id="excelDataTable" class="table table-striped table-bordered">
-            <thead>
-                <tr>
-                    <?php if (!empty($filteredData[0])): ?>
-                        <?php foreach ($filteredData[0] as $header): ?>
-                            <th><?= htmlspecialchars($header) ?></th>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tr>
-            </thead>
-            <tbody>
-                <?php for ($i = 1; $i < count($filteredData); $i++): ?>
-                    <tr>
-                        <?php foreach ($filteredData[$i] as $j => $cell): ?>
-                            <?php if ($j == 0): ?>
-                                <td><a href="form_control.php?data=<?=$filteredData[$i][0]?>"><?= nl2br(htmlspecialchars($cell)) ?></a></td>
-                            <?php else: ?>
-                                <td><?= nl2br(str_replace('**', '<b>', str_replace('**', '</b>', htmlspecialchars($cell)))) ?></td>
+        <form action="callback.php" method="post">
+            <button type="submit" class="btn btn-secondary">Lista de Controles</button>
+        </form>
+        <form action="gestionar_controles.php" method="post">
+            <button type="submit" class="btn btn-secondary">Gestionar controles</button>
+        </form>
+        <form action="bitacoraControles.php" method="post">
+            <button type="submit" class="btn btn-info">Ver bitácora</button>
+        </form>
+        <form action="logout.php" method="post">
+            <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
+        </form>
+    </div>
+    <div class="content" id="content">
+        <div class="container mt-5">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1>Lista de Controles</h1>
+            </div>
+            <div class="table-responsive">
+                <table id="excelDataTable" class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <?php if (!empty($filteredData[0])): ?>
+                                <?php foreach ($filteredData[0] as $header): ?>
+                                    <th><?= htmlspecialchars($header) ?></th>
+                                <?php endforeach; ?>
                             <?php endif; ?>
-                        <?php endforeach; ?>
-                    </tr>
-                <?php endfor; ?>
-            </tbody>
-        </table>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php for ($i = 1; $i < count($filteredData); $i++): ?>
+                            <tr>
+                                <?php foreach ($filteredData[$i] as $j => $cell): ?>
+                                    <?php if ($j == 0): ?>
+                                        <td><a href="form_control.php?data=<?=$filteredData[$i][0]?>"><?= nl2br(htmlspecialchars($cell)) ?></a></td>
+                                    <?php else: ?>
+                                        <td><?= nl2br(str_replace('**', '<b>', str_replace('**', '</b>', htmlspecialchars($cell)))) ?></td>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </tr>
+                        <?php endfor; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>    
     </div>
 
     <!-- Incluir jQuery -->
@@ -272,6 +361,16 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
                 ]
             });
         });
+
+        function toggleMenu() {
+            var sidebar = document.getElementById('sidebar');
+            var content = document.getElementById('content');
+            sidebar.classList.toggle('open');
+            content.classList.toggle('shifted');
+        }
     </script>
 </body>
 </html>
+<?php
+endif;
+?>

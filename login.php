@@ -1,14 +1,6 @@
 <?php
-use Dotenv\Dotenv;
-require 'vendor/autoload.php';
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-$dotenv->required(['CLIENT_ID', 'TENANT_ID', 'REDIRECT_URI']); 
-// Configuración básica
-$client_id = $_ENV['CLIENT_ID'];
-$tenant_id = $_ENV['TENANT_ID'];
-$redirect_uri = $_ENV['REDIRECT_URI'];  // Debe coincidir con la URI registrada
+require_once __DIR__ . '/../vendor/autoload.php';
+require 'config.php'; // Incluir el archivo de configuración
 
 // URL de autorización
 $auth_url = "https://login.microsoftonline.com/$tenant_id/oauth2/v2.0/authorize?" . http_build_query([
