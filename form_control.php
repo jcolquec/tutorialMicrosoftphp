@@ -1,19 +1,12 @@
 <?php
+
 session_start();
-require 'vendor/autoload.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+require 'funciones.php'; // Incluir el archivo de funciones
+require 'config.php'; // Incluir el archivo de configuración
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
-use Dotenv\Dotenv;
-
-// Load .env file
-$dotenv = Dotenv::createImmutable(__DIR__);
-$dotenv->load();
-$dotenv->required(['DRIVE_ID', 'ITEM_ID','WORKSHEET_ID_CTRL']); 
-
-$client = new Client();
-$driveId = $_ENV['DRIVE_ID'];
-$itemId = $_ENV['ITEM_ID'];
-$worksheetIdControles = $_ENV['WORKSHEET_ID_CTRL'];
 
 // Verificar si la sesión de Microsoft está activa
 if (!isset($_SESSION['accessToken'])) {
@@ -21,6 +14,10 @@ if (!isset($_SESSION['accessToken'])) {
     header('Location: login.php');
     exit();
 }
+
+// Variable de control para errores
+$error_occurred = false;
+
 try{
 
     // Solicita el access token usando el authorization code
@@ -32,7 +29,7 @@ try{
 
     // Buscar el dato en el array de datos de la columna y guardarlo en una variable
     $foundData = null;
-    foreach ($dataControles['values'] as $item) {
+    foreach ($dataControles as $item) {
         
         if ($item[0] === $data) {
             $foundData = $item;
@@ -43,27 +40,17 @@ try{
 }catch (RequestException $e) {
     echo 'Error en la solicitud: ' . $e->getMessage();
 }catch(Exception $e){
-    echo $e->getMessage();
+    echo 'Error: ' . $e->getMessage();
 }
 
-/**
- * Obtiene los valores de la hoja de cálculo.
- */
-function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken, $driveId) {
-    $select = 'select';
-    $response = $client->request('GET', "https://graph.microsoft.com/v1.0/drives/$driveId/items/$itemId/workbook/worksheets/$worksheetId/usedRange?$select=values", [
-        'headers' => [
-            'Authorization' => 'Bearer ' . $accessToken,
-        ],
-    ]);
-
-    return json_decode($response->getBody(), true);
-}
+// Solo cargar el HTML si no ocurrió un error
+if (!$error_occurred):
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Detalle del Control</title>
     <!-- Incluir Bootstrap CSS -->
     <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
@@ -88,34 +75,143 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
             boton.closest('.form-group').remove();
         }
     </script>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            color: #ffffff;
+        }
+
+        .wrapper {
+            display: flex;
+            flex: 1;
+        }
+
+        .sidebar {
+            height: 100vh;
+            width: 250px;
+            background-color: #343a40;
+            padding-top: 20px;
+            position: fixed;
+            top: 0;
+            left: -250px;
+            transition: left 0.3s ease;
+        }
+
+        .menu-toggle {
+            background-color: #343a40;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            z-index: 1100;
+            position: fixed;
+            top: 10px;
+            left: 10px;
+        }
+
+        .sidebar.open {
+            left: 0; /* Mostrar el menú cuando está abierto */
+        }
+
+        .sidebar form {
+            width: 100%;
+            padding: 10px;
+        }
+
+        .sidebar button {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            background-color: #1e1e1e;
+            margin-left: 0px;
+            padding: 20px;
+            transition: margin-left 0.3s ease;
+            overflow-x: auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .content.shifted {
+            margin-left: 250px; /* Ajustar el contenido cuando el menú está abierto */
+        }
+
+        .form-control, .form-control:disabled, .form-control[readonly], .form-control:focus, .modal-content{
+            background-color: #333;
+            color: #fff;
+        }
+        .dataTables_wrapper .dataTables_info{
+            color: #ffffff !important;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                left: -100%;
+            }
+
+            .content {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .content.shifted {
+                margin-left: 100%;
+            }
+
+            .menu-toggle {
+                display: block;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 1000;
+            }
+        }
+
+    </style>
 </head>
-    <body>
+<body>
+    <button class="btn btn-secondary menu-toggle" onclick="toggleMenu()">☰</button>
+    <div class="sidebar" id="sidebar">
+        <div class="menu-title">
+            <h2 class="text-center">Menú</h2>
+        </div>
+        <form action="callback.php" method="post">
+            <button type="submit" class="btn btn-secondary">Lista de Controles</button>
+        </form>
+        <form action="gestionar_controles.php" method="post">
+            <button type="submit" class="btn btn-secondary">Gestionar controles</button>
+        </form>
+        <form action="bitacoraControles.php" method="post">
+            <button type="submit" class="btn btn-info">Ver bitácora</button>
+        </form>
+        <form action="logout.php" method="post">
+            <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
+        </form>
+    </div>
+    <div class="content" id="content">
         <div class="container mt-5">
-            
             <!-- Contenedor para el título y el botón de cerrar sesión -->
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h1>Detalle del Control: <?php echo $foundData[0]; ?></h1>
-                <div>
-                    <form action="callback.php" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-secondary">Lista de Controles</button>
-                    </form>
-                    <form action="gestionar_controles.php" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-secondary">Gestionar controles</button>
-                    </form>
-                    <form action="bitacoraControles.php" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-info">Ver bitácora</button>
-                    </form>
-                    <form action="logout.php" method="post" class="d-inline">
-                        <button type="submit" class="btn btn-primary">Cerrar Sesión</button>
-                    </form>
-                </div>
             </div>
             <p class="mb-4">Descripción de Control: <?php echo substr($foundData[2], 8); ?></p>
             <h2 class="mb-4">Formulario de Revisión de Control</h2>
 
             <form action="agregar_archivo.php" method="post" id="controlForm" onsubmit="return validateForm()">
                 <div class="form-group">
-                    <label for="dato">Dato:</label>
+                    <label for="dato">Control:</label>
                     <input type="text" class="form-control" id="dato" name="dato" value="<?php echo $foundData[0]; ?>" readonly>
                 </div>
                 
@@ -132,8 +228,11 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
                 </div>
                 <div class="form-group">
                     <p>Pregunta: ¿Se encuentran completadas correctamente TODAS las comprobaciones/revisiones de este control?</p>
-                    <label for="respuesta">Respuesta (Sí o No):</label>
-                    <input type="text" class="form-control" id="respuesta" name="respuesta" required>
+                    <select class="form-control" id="respuesta" name="respuesta" required>
+                        <option value="">Seleccione una opción</option>
+                        <option value="Sí">Sí</option>
+                        <option value="No">No</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="observaciones">Observaciones:</label>
@@ -159,6 +258,7 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
             </form>
             
         </div>
+        </div>
         <!-- Modal de éxito -->
         <div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
             <div class="modal-dialog">
@@ -175,38 +275,53 @@ function getWorksheetValues(Client $client, $itemId, $worksheetId, $accessToken,
                 </div>
             </div>
         </div>
-        <!-- Incluir Bootstrap JS y dependencias -->
-        <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
-        <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
-        <script>
-        function validateForm() {
-            var objeto = document.getElementById('objeto').value;
-            var objetoConfirm = document.getElementById('objetoConfirm').value;
-            var errorMessage = document.getElementById('error-message');
+    
+    <!-- Incluir Bootstrap JS y dependencias -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const objetoInput = document.getElementById('objeto');
+        const objetoConfirmInput = document.getElementById('objetoConfirm');
+        const errorMessage = document.getElementById('error-message');
 
-            if (objeto !== objetoConfirm) {
+        function validateInputs() {
+            if (objetoInput.value !== objetoConfirmInput.value) {
                 errorMessage.classList.remove('d-none');
-                return false;
+            } else {
+                errorMessage.classList.add('d-none');
             }
-            errorMessage.classList.add('d-none');
-            return true;
         }
 
-        document.getElementById('controlForm').onsubmit = validateForm;
+        objetoInput.addEventListener('input', validateInputs);
+        objetoConfirmInput.addEventListener('input', validateInputs);
+    });
 
-        $(document).ready(function() {
-            // Mostrar ventana emergente si el formulario se ha registrado con éxito
-            const urlParams = new URLSearchParams(window.location.search);
-            if (urlParams.has('success')) {
-                $('#successModal').modal('show');
-            }
-        });
+    document.getElementById('controlForm').onsubmit = validateForm;
 
-        document.getElementById('acceptButton').addEventListener('click', function() {
-            window.location.href = 'callback.php';
-        });
-        </script>
-    </body>
-    
+    $(document).ready(function() {
+        // Mostrar ventana emergente si el formulario se ha registrado con éxito
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('success')) {
+            $('#successModal').modal('show');
+        }
+    });
+
+    document.getElementById('acceptButton').addEventListener('click', function() {
+        window.location.href = 'callback.php';
+    });
+
+    function toggleMenu() {
+        var sidebar = document.getElementById('sidebar');
+        var content = document.getElementById('content');
+        sidebar.classList.toggle('open');
+        content.classList.toggle('shifted');
+    }
+    </script>
+
+</body>
 </html>
+<?php
+endif;
+?>
